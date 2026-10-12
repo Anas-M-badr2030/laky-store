@@ -5,31 +5,47 @@ import {
   Package, 
   Layers, 
   ShoppingBag, 
+  Users,
+  KeyRound,
   Plus, 
   Trash2, 
   Edit3, 
   Upload, 
-  CheckCircle, 
-  AlertCircle, 
   Phone, 
-  ExternalLink,
-  Lock,
-  ArrowUpDown
+  Lock, 
+  Mail, 
+  LogOut, 
+  CheckCircle2, 
+  AlertCircle,
+  ShieldCheck,
+  UserCheck
 } from "lucide-react";
 
 export default function AdminDashboard() {
-  // نظام الدخول السريع برمز سري
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [pin, setPin] = useState("");
-  const [pinError, setPinError] = useState("");
+  const [sessionUser, setSessionUser] = useState(null);
+  const [userRole, setUserRole] = useState(null); // super_admin | products_manager | orders_manager
+  const [authLoading, setAuthLoading] = useState(true);
+  
+  // بيانات تسجيل الدخول
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [authError, setAuthError] = useState("");
 
-  const [activeTab, setActiveTab] = useState("products"); // products | categories | orders
+  // نافذة تغيير كلمة المرور
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordMsg, setPasswordMsg] = useState({ type: "", text: "" });
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+
+  // التبويب النشط
+  const [activeTab, setActiveTab] = useState("products"); // products | categories | orders | team
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  // حالة نموذج المنتج (إضافة / تعديل)
+  // حالة نموذج المنتج
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [productForm, setProductForm] = useState({
@@ -58,14 +74,101 @@ export default function AdminDashboard() {
     sort_order: 1,
   });
 
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (pin === "2026") {
-      setIsAuthenticated(true);
-      setPinError("");
-    } else {
-      setPinError("رمز الدخول غير صحيح");
+  // فحص الجلسة والصلاحية
+  const checkUserRole = async (user) => {
+    if (!user) return;
+    try {
+      const { data: profile } = await supabase
+        .from("admin_profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      if (profile) {
+        setUserRole(profile.role);
+      } else if (user.email === "anasmustafabadr@gmail.com") {
+        // تسجيل المدير العام تلقائياً إذا لم يكن مضافاً
+        await supabase.from("admin_profiles").upsert({
+          id: user.id,
+          email: user.email,
+          role: "super_admin",
+        });
+        setUserRole("super_admin");
+      } else {
+        setUserRole("orders_manager");
+      }
+    } catch (err) {
+      if (user.email === "anasmustafabadr@gmail.com") setUserRole("super_admin");
+      else setUserRole("orders_manager");
     }
+  };
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const user = session?.user || null;
+      setSessionUser(user);
+      if (user) checkUserRole(user);
+      setAuthLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const user = session?.user || null;
+      setSessionUser(user);
+      if (user) await checkUserRole(user);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // تسجيل الدخول
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    setAuthError("");
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (error) {
+      setAuthError("البريد الإلكتروني أو كلمة المرور غير صحيحة.");
+      setAuthLoading(false);
+    } else {
+      setSessionUser(data.user);
+      await checkUserRole(data.user);
+      setAuthLoading(false);
+    }
+  };
+
+  // تسجيل الخروج
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setSessionUser(null);
+    setUserRole(null);
+  };
+
+  // تغيير كلمة المرور
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (newPassword.length < 6) {
+      setPasswordMsg({ type: "error", text: "كلمة المرور يجب أن لا تقل عن 6 أحرف أو أرقام" });
+      return;
+    }
+
+    setUpdatingPassword(true);
+    setPasswordMsg({ type: "", text: "" });
+
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+
+    if (error) {
+      setPasswordMsg({ type: "error", text: "حدث خطأ: " + error.message });
+    } else {
+      setPasswordMsg({ type: "success", text: "تم تغيير كلمة المرور بنجاح!" });
+      setTimeout(() => {
+        setShowPasswordModal(false);
+        setNewPassword("");
+        setPasswordMsg({ type: "", text: "" });
+      }, 1500);
+    }
+    setUpdatingPassword(false);
   };
 
   // جلب البيانات من Supabase
@@ -79,20 +182,28 @@ export default function AdminDashboard() {
       setCategories(cats || []);
       setProducts(prods || []);
       setOrders(ords || []);
+
+      if (userRole === "super_admin") {
+        const { data: team } = await supabase.from("admin_profiles").select("*").order("created_at", { ascending: false });
+        setTeamMembers(team || []);
+      }
     } catch (err) {
-      console.error("خطأ في جلب البيانات:", err);
+      console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (sessionUser && userRole) {
       fetchData();
+      if (userRole === "orders_manager" && activeTab === "products") {
+        setActiveTab("orders");
+      }
     }
-  }, [isAuthenticated]);
+  }, [sessionUser, userRole]);
 
-  // رفع الصورة إلى Supabase Storage
+  // رفع الصورة
   const handleImageUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -103,40 +214,39 @@ export default function AdminDashboard() {
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
       const filePath = `products/${fileName}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("products-images")
-        .upload(filePath, file);
-
+      const { error: uploadError } = await supabase.storage.from("products-images").upload(filePath, file);
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from("products-images")
-        .getPublicUrl(filePath);
-
+      const { data: { publicUrl } } = supabase.storage.from("products-images").getPublicUrl(filePath);
       setProductForm((prev) => ({ ...prev, image: publicUrl }));
     } catch (err) {
-      alert("تعذر رفع الصورة. تأكد من إنشاء Bucket باسم products-images وجعله Public.");
-      console.error(err);
+      alert("تعذر رفع الصورة. تأكد من أن الـ Bucket باسم products-images وحالته Public.");
     } finally {
       setUploadingImage(false);
     }
   };
 
-  // حفظ المنتج (إضافة أو تحديث)
+  // حفظ المنتج
   const handleSaveProduct = async (e) => {
     e.preventDefault();
     const payload = {
-      ...productForm,
       id: productForm.id || `p-${Date.now()}`,
+      brand: "raihanna",
+      name: productForm.name,
+      subtitle: productForm.subtitle || "",
+      description: productForm.description || "",
       price: Number(productForm.price),
       original_price: productForm.original_price ? Number(productForm.original_price) : null,
-      sort_order: Number(productForm.sort_order),
+      image: productForm.image || "",
+      badge: productForm.badge || "",
+      category_id: productForm.category_id || (categories[0]?.id || null),
+      sort_order: Number(productForm.sort_order) || 1,
+      is_bundle: Boolean(productForm.is_bundle),
     };
 
     const { error } = await supabase.from("products").upsert(payload);
-    if (error) {
-      alert("خطأ في حفظ المنتج: " + error.message);
-    } else {
+    if (error) alert("تعذر حفظ المنتج: " + error.message);
+    else {
       setShowProductModal(false);
       setEditingProduct(null);
       fetchData();
@@ -145,18 +255,18 @@ export default function AdminDashboard() {
 
   // حذف منتج
   const handleDeleteProduct = async (id) => {
-    if (!confirm("هل أنت متأكد من حذف هذا المنتج؟")) return;
+    if (!confirm("هل أنت متأكد من حذف هذا المنتج نهائياً؟")) return;
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) alert("خطأ في الحذف: " + error.message);
     else fetchData();
   };
 
-  // حفظ قسم جديد
+  // حفظ قسم
   const handleSaveCategory = async (e) => {
     e.preventDefault();
     const { error } = await supabase.from("categories").upsert({
       ...categoryForm,
-      sort_order: Number(categoryForm.sort_order)
+      sort_order: Number(categoryForm.sort_order) || 1,
     });
     if (error) alert("خطأ في حفظ القسم: " + error.message);
     else {
@@ -172,70 +282,162 @@ export default function AdminDashboard() {
     else fetchData();
   };
 
-  if (!isAuthenticated) {
+  // تعديل صلاحية عضو فريق
+  const handleUpdateRole = async (memberId, newRole) => {
+    const { error } = await supabase.from("admin_profiles").update({ role: newRole }).eq("id", memberId);
+    if (error) alert("تعذر تحديث الصلاحية: " + error.message);
+    else {
+      alert("تم تحديث صلاحية العضو بنجاح");
+      fetchData();
+    }
+  };
+
+  // شاشة تسجيل الدخول
+  if (!sessionUser) {
     return (
       <div className="min-h-screen bg-[#FDF7F3] flex items-center justify-center p-4" dir="rtl">
-        <form onSubmit={handleLogin} className="bg-white p-8 rounded-3xl border border-[#EADFD5] shadow-lg max-w-sm w-full text-center space-y-4">
+        <form onSubmit={handleLogin} className="bg-white p-8 rounded-3xl border border-[#EADFD5] shadow-xl max-w-sm w-full space-y-4">
           <div className="w-14 h-14 bg-[#E8F4ED] rounded-2xl flex items-center justify-center mx-auto text-[#2D6A4F]">
             <Lock size={28} />
           </div>
-          <h1 className="text-xl font-black text-[#2E332F]">لوحة تحكم لكي ولأسرتك</h1>
-          <p className="text-xs text-[#5C5652]">أدخل الرمز السري للوصول للوحة الإدارة</p>
-          <input
-            type="password"
-            value={pin}
-            onChange={(e) => setPin(e.target.value)}
-            placeholder="الرمز السري (الافتراضي 2026)"
-            className="w-full px-4 py-3 border border-[#EADFD5] rounded-xl text-center text-lg font-bold tracking-widest focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]"
-          />
-          {pinError && <p className="text-xs text-red-600 font-bold">{pinError}</p>}
-          <button type="submit" className="w-full py-3 bg-[#2D6A4F] text-white rounded-xl font-bold hover:bg-[#23533E] transition-all">
-            دخول
+          <div className="text-center">
+            <h1 className="text-xl font-black text-[#2E332F]">تسجيل دخول الإدارة</h1>
+            <p className="text-xs text-[#5C5652] mt-1">الدخول مقتصر على المشرفين المصرح لهم فقط</p>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">البريد الإلكتروني (Gmail)</label>
+              <div className="relative">
+                <input
+                  type="email"
+                  required
+                  placeholder="admin@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full pl-3 pr-10 py-2.5 border border-gray-300 rounded-xl text-xs focus:ring-2 focus:ring-[#2D6A4F] focus:outline-none"
+                />
+                <Mail size={16} className="absolute right-3 top-3 text-gray-400" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">كلمة المرور</label>
+              <div className="relative">
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-3 pr-10 py-2.5 border border-gray-300 rounded-xl text-xs focus:ring-2 focus:ring-[#2D6A4F] focus:outline-none"
+                />
+                <Lock size={16} className="absolute right-3 top-3 text-gray-400" />
+              </div>
+            </div>
+          </div>
+
+          {authError && <p className="text-xs text-red-600 font-bold text-center">{authError}</p>}
+
+          <button
+            type="submit"
+            disabled={authLoading}
+            className="w-full py-3 bg-[#2D6A4F] text-white rounded-xl font-bold hover:bg-[#23533E] transition-all text-xs"
+          >
+            {authLoading ? "جاري التحقق..." : "دخول إلى لوحة التحكم"}
           </button>
         </form>
       </div>
     );
   }
 
+  const isSuperAdmin = userRole === "super_admin";
+  const canManageProducts = isSuperAdmin || userRole === "products_manager";
+  const canManageOrders = isSuperAdmin || userRole === "orders_manager";
+
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-[#2E332F] pb-16" dir="rtl">
       {/* شريط الإدارة العلوي */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-30 px-6 py-4 flex items-center justify-between">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-30 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-black text-[#2D6A4F]">لوحة التحكم | Laky Store</h1>
-          <p className="text-xs text-gray-500">إدارة المنتجات، الأقسام، وحركة الطلبات</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-black text-[#2D6A4F]">لوحة تحكم المتجر | Laky Store</h1>
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-[#E8F4ED] text-[#2D6A4F] border border-[#2D6A4F]/20 flex items-center gap-1">
+              <ShieldCheck size={12} />
+              {isSuperAdmin ? "المدير العام" : userRole === "products_manager" ? "مسؤول منتجات" : "مسؤول طلبات"}
+            </span>
+          </div>
+          <p className="text-xs text-gray-400">{sessionUser.email}</p>
         </div>
 
-        {/* أزرار التبويب */}
-        <div className="flex gap-2 bg-[#F1F3F5] p-1 rounded-2xl">
+        <div className="flex items-center gap-2">
+          {/* تبويبات التنقل */}
+          <div className="flex gap-1 bg-[#F1F3F5] p-1 rounded-2xl text-xs">
+            {canManageProducts && (
+              <>
+                <button
+                  onClick={() => setActiveTab("products")}
+                  className={`px-3 py-1.5 rounded-xl font-black flex items-center gap-1 transition-all ${
+                    activeTab === "products" ? "bg-white text-[#2D6A4F] shadow-xs" : "text-gray-600"
+                  }`}
+                >
+                  <Package size={14} />
+                  <span>المنتجات ({products.length})</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("categories")}
+                  className={`px-3 py-1.5 rounded-xl font-black flex items-center gap-1 transition-all ${
+                    activeTab === "categories" ? "bg-white text-[#2D6A4F] shadow-xs" : "text-gray-600"
+                  }`}
+                >
+                  <Layers size={14} />
+                  <span>الأقسام ({categories.length})</span>
+                </button>
+              </>
+            )}
+
+            {canManageOrders && (
+              <button
+                onClick={() => setActiveTab("orders")}
+                className={`px-3 py-1.5 rounded-xl font-black flex items-center gap-1 transition-all ${
+                  activeTab === "orders" ? "bg-white text-[#2D6A4F] shadow-xs" : "text-gray-600"
+                }`}
+              >
+                <ShoppingBag size={14} />
+                <span>الطلبات ({orders.length})</span>
+              </button>
+            )}
+
+            {isSuperAdmin && (
+              <button
+                onClick={() => setActiveTab("team")}
+                className={`px-3 py-1.5 rounded-xl font-black flex items-center gap-1 transition-all ${
+                  activeTab === "team" ? "bg-white text-[#2D6A4F] shadow-xs" : "text-gray-600"
+                }`}
+              >
+                <Users size={14} />
+                <span>صلاحيات الفريق</span>
+              </button>
+            )}
+          </div>
+
+          {/* زر تغيير كلمة المرور */}
           <button
-            onClick={() => setActiveTab("products")}
-            className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all ${
-              activeTab === "products" ? "bg-white text-[#2D6A4F] shadow-xs" : "text-gray-600 hover:text-black"
-            }`}
+            onClick={() => setShowPasswordModal(true)}
+            className="p-2 text-gray-600 hover:text-[#2D6A4F] hover:bg-emerald-50 rounded-xl border border-gray-200 transition-colors"
+            title="تغيير كلمة المرور"
           >
-            <Package size={16} />
-            <span>المنتجات ({products.length})</span>
+            <KeyRound size={17} />
           </button>
 
+          {/* زر تسجيل الخروج */}
           <button
-            onClick={() => setActiveTab("categories")}
-            className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all ${
-              activeTab === "categories" ? "bg-white text-[#2D6A4F] shadow-xs" : "text-gray-600 hover:text-black"
-            }`}
+            onClick={handleLogout}
+            className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl border border-gray-200 transition-colors"
+            title="تسجيل الخروج"
           >
-            <Layers size={16} />
-            <span>الأقسام ({categories.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("orders")}
-            className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all ${
-              activeTab === "orders" ? "bg-white text-[#2D6A4F] shadow-xs" : "text-gray-600 hover:text-black"
-            }`}
-          >
-            <ShoppingBag size={16} />
-            <span>الطلبات ({orders.length})</span>
+            <LogOut size={17} />
           </button>
         </div>
       </header>
@@ -244,12 +446,12 @@ export default function AdminDashboard() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 pt-8">
         
         {/* ==================== 1. إدارة المنتجات ==================== */}
-        {activeTab === "products" && (
+        {activeTab === "products" && canManageProducts && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <div>
-                <h2 className="text-lg font-black">قائمة المنتجات الحالية</h2>
-                <p className="text-xs text-gray-500">تحكم بالأسعار، الصور، والترتيب داخل كل قسم</p>
+                <h2 className="text-lg font-black">إدارة منتجات ريحانة</h2>
+                <p className="text-xs text-gray-500">تعديل الأسعار، الأوصاف، وترتيب ظهور كل منتج داخل قسمه</p>
               </div>
               <button
                 onClick={() => {
@@ -269,7 +471,7 @@ export default function AdminDashboard() {
                   });
                   setShowProductModal(true);
                 }}
-                className="px-4 py-2.5 bg-[#2D6A4F] text-white rounded-xl text-xs font-black flex items-center gap-1.5 hover:bg-[#23533E] transition-all"
+                className="px-4 py-2 bg-[#2D6A4F] text-white rounded-xl text-xs font-black flex items-center gap-1.5 hover:bg-[#23533E] transition-all"
               >
                 <Plus size={16} />
                 <span>إضافة منتج جديد</span>
@@ -284,16 +486,16 @@ export default function AdminDashboard() {
                     <th className="p-3.5">الصورة</th>
                     <th className="p-3.5">اسم المنتج</th>
                     <th className="p-3.5">القسم</th>
-                    <th className="p-3.5">السعر الحالي</th>
+                    <th className="p-3.5">السعر</th>
                     <th className="p-3.5">السعر الأصلي</th>
-                    <th className="p-3.5">شارة العرض</th>
+                    <th className="p-3.5">الشارة</th>
                     <th className="p-3.5 text-center">الإجراءات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {products.map((p) => (
                     <tr key={p.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="p-3.5 font-bold text-gray-500">{p.sort_order}</td>
+                      <td className="p-3.5 font-bold text-gray-500">#{p.sort_order}</td>
                       <td className="p-3.5">
                         <img src={p.image || "/favicon.ico"} alt={p.name} className="w-10 h-10 object-cover rounded-lg border border-gray-100" />
                       </td>
@@ -314,16 +516,30 @@ export default function AdminDashboard() {
                           <button
                             onClick={() => {
                               setEditingProduct(p);
-                              setProductForm(p);
+                              setProductForm({
+                                id: p.id,
+                                name: p.name,
+                                subtitle: p.subtitle || "",
+                                description: p.description || "",
+                                price: p.price,
+                                original_price: p.original_price || "",
+                                image: p.image || "",
+                                badge: p.badge || "",
+                                category_id: p.category_id || "",
+                                sort_order: p.sort_order || 1,
+                                is_bundle: p.is_bundle || false,
+                              });
                               setShowProductModal(true);
                             }}
                             className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
+                            title="تعديل المنتج"
                           >
                             <Edit3 size={16} />
                           </button>
                           <button
                             onClick={() => handleDeleteProduct(p.id)}
                             className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
+                            title="حذف المنتج"
                           >
                             <Trash2 size={16} />
                           </button>
@@ -338,12 +554,12 @@ export default function AdminDashboard() {
         )}
 
         {/* ==================== 2. إدارة الأقسام ==================== */}
-        {activeTab === "categories" && (
+        {activeTab === "categories" && canManageProducts && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <div>
-                <h2 className="text-lg font-black">أقسام المتجر</h2>
-                <p className="text-xs text-gray-500">تحكم بأسماء الأقسام وترتيب ظهورها في الصفحة الرئيسية</p>
+                <h2 className="text-lg font-black">أقسام المتجر وترتيبها</h2>
+                <p className="text-xs text-gray-500">تحكم بأسماء وترتيب ظهور الأقسام الرئيسية في المتجر</p>
               </div>
               <button
                 onClick={() => {
@@ -357,7 +573,7 @@ export default function AdminDashboard() {
                   });
                   setShowCategoryModal(true);
                 }}
-                className="px-4 py-2.5 bg-[#2D6A4F] text-white rounded-xl text-xs font-black flex items-center gap-1.5"
+                className="px-4 py-2 bg-[#2D6A4F] text-white rounded-xl text-xs font-black flex items-center gap-1.5"
               >
                 <Plus size={16} />
                 <span>إضافة قسم جديد</span>
@@ -383,7 +599,7 @@ export default function AdminDashboard() {
         )}
 
         {/* ==================== 3. إدارة الطلبات ==================== */}
-        {activeTab === "orders" && (
+        {activeTab === "orders" && canManageOrders && (
           <div className="space-y-6">
             <h2 className="text-lg font-black">سجل الطلبات الواردة</h2>
             <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-xs">
@@ -393,7 +609,7 @@ export default function AdminDashboard() {
                     <th className="p-3.5">العميل</th>
                     <th className="p-3.5">رقم الهاتف</th>
                     <th className="p-3.5">المحافظة / العنوان</th>
-                    <th className="p-3.5">المنتجات المطلوبة</th>
+                    <th className="p-3.5">المنتجات</th>
                     <th className="p-3.5">الإجمالي</th>
                     <th className="p-3.5">الحالة</th>
                     <th className="p-3.5 text-center">إجراءات</th>
@@ -402,7 +618,7 @@ export default function AdminDashboard() {
                 <tbody className="divide-y divide-gray-100">
                   {orders.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="p-6 text-center text-gray-400">لا توجد طلبات مسجلة بعد في قاعدة البيانات.</td>
+                      <td colSpan="7" className="p-6 text-center text-gray-400">لا توجد طلبات مسجلة بعد.</td>
                     </tr>
                   ) : (
                     orders.map((o) => (
@@ -456,211 +672,23 @@ export default function AdminDashboard() {
           </div>
         )}
 
-      </main>
+        {/* ==================== 4. صلاحيات فريق العمل (للمدير العام فقط) ==================== */}
+        {activeTab === "team" && isSuperAdmin && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-lg font-black">أعضاء الإدارة وتوزيع الصلاحيات</h2>
+              <p className="text-xs text-gray-500">يمكنك هنا كمدير عام تحديد مستوى وصول وصلاحيات كل عضو مسجل في النظام</p>
+            </div>
 
-      {/* نافذة إضافة / تعديل منتج */}
-      {showProductModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto space-y-4" dir="rtl">
-            <h3 className="text-base font-black text-[#2E332F]">
-              {editingProduct ? "تعديل المنتج" : "إضافة منتج جديد"}
-            </h3>
-
-            <form onSubmit={handleSaveProduct} className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-gray-600 block mb-1">اسم المنتج</label>
-                <input
-                  type="text"
-                  required
-                  value={productForm.name}
-                  onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-gray-600 block mb-1">الوصف الفرعي (العنوان التوضيحي)</label>
-                <input
-                  type="text"
-                  value={productForm.subtitle}
-                  onChange={(e) => setProductForm({ ...productForm, subtitle: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-xl"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-gray-600 block mb-1">السعر النهائي (ج.م)</label>
-                  <input
-                    type="number"
-                    required
-                    value={productForm.price}
-                    onChange={(e) => setProductForm({ ...productForm, price: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-gray-600 block mb-1">السعر قبل الخصم (ج.م)</label>
-                  <input
-                    type="number"
-                    value={productForm.original_price}
-                    onChange={(e) => setProductForm({ ...productForm, original_price: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-gray-600 block mb-1">القسم</label>
-                  <select
-                    value={productForm.category_id}
-                    onChange={(e) => setProductForm({ ...productForm, category_id: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl"
-                  >
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="font-bold text-gray-600 block mb-1">رقم الترتيب داخل القسم</label>
-                  <input
-                    type="number"
-                    value={productForm.sort_order}
-                    onChange={(e) => setProductForm({ ...productForm, sort_order: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl"
-                  />
-                </div>
-              </div>
-
-              {/* رفع الصورة */}
-              <div>
-                <label className="font-bold text-gray-600 block mb-1">صورة المنتج</label>
-                <div className="flex gap-2 items-center">
-                  <input
-                    type="text"
-                    placeholder="رابط الصورة أو ارفع ملف"
-                    value={productForm.image}
-                    onChange={(e) => setProductForm({ ...productForm, image: e.target.value })}
-                    className="flex-1 px-3 py-2 border rounded-xl text-left font-mono text-[11px]"
-                  />
-                  <label className="px-3 py-2 bg-gray-100 hover:bg-gray-200 cursor-pointer rounded-xl font-bold flex items-center gap-1">
-                    <Upload size={14} />
-                    <span>{uploadingImage ? "جاري الرفع..." : "رفع"}</span>
-                    <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
-                  </label>
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-gray-600 block mb-1">شارة ترويجية (Badge)</label>
-                <input
-                  type="text"
-                  placeholder="مثال: الأكثر مبيعاً / وفر 100 ج.م"
-                  value={productForm.badge}
-                  onChange={(e) => setProductForm({ ...productForm, badge: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-xl"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-gray-600 block mb-1">وصف المنتج الكامل</label>
-                <textarea
-                  rows="3"
-                  value={productForm.description}
-                  onChange={(e) => setProductForm({ ...productForm, description: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-xl"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowProductModal(false)}
-                  className="px-4 py-2 bg-gray-100 rounded-xl font-bold"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-[#2D6A4F] text-white rounded-xl font-bold hover:bg-[#23533E]"
-                >
-                  حفظ المنتج
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* نافذة إضافة قسم */}
-      {showCategoryModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4" dir="rtl">
-            <h3 className="text-base font-black">إضافة قسم جديد</h3>
-            <form onSubmit={handleSaveCategory} className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-gray-600 block mb-1">معرف القسم بالإنجليزي (ID)</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="مثال: perfumes"
-                  value={categoryForm.id}
-                  onChange={(e) => setCategoryForm({ ...categoryForm, id: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-xl font-mono"
-                />
-              </div>
-              <div>
-                <label className="font-bold text-gray-600 block mb-1">اسم القسم بالعربي</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="مثال: العطور الفاخرة"
-                  value={categoryForm.name}
-                  onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-xl"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-bold text-gray-600 block mb-1">الأيقونة (Emoji)</label>
-                  <input
-                    type="text"
-                    value={categoryForm.icon}
-                    onChange={(e) => setCategoryForm({ ...categoryForm, icon: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl text-center"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-gray-600 block mb-1">رقم الترتيب</label>
-                  <input
-                    type="number"
-                    value={categoryForm.sort_order}
-                    onChange={(e) => setCategoryForm({ ...categoryForm, sort_order: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-xl text-center"
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCategoryModal(false)}
-                  className="px-4 py-2 bg-gray-100 rounded-xl font-bold"
-                >
-                  إلغاء
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-[#2D6A4F] text-white rounded-xl font-bold hover:bg-[#23533E]"
-                >
-                  حفظ القسم
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+            <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-xs">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-[#FAFBFB] border-b border-gray-200 text-gray-600 font-bold">
+                  <tr>
+                    <th className="p-3.5">البريد الإلكتروني</th>
+                    <th className="p-3.5">الصلاحية الحالية</th>
+                    <th className="p-3.5">تعديل الصلاحية</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {teamMembers.map((member) => (
+                    <tr key={member.id} className="hover:bg-gray-50
