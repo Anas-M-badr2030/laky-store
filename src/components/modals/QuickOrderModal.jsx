@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useModal } from "@/hooks/useModal";
 import { generateWhatsAppLink, formatPrice } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 import { X, ShieldCheck, Truck, MessageCircle, AlertCircle, ShoppingBag, Sparkles } from "lucide-react";
 
 export default function QuickOrderModal() {
@@ -28,6 +29,36 @@ export default function QuickOrderModal() {
     setLoading(true);
     setErrorMsg("");
 
+    // استخراج المحافظة من العنوان إن وجدت (قبل أول شرطة أو فاصلة)
+    const addressParts = formData.address.split(/[-–,،]/);
+    const detectedCity = addressParts.length > 1 ? addressParts[0].trim() : "مصر";
+
+    // 1. تسجيل الطلب مباشرة في Supabase ليظهر في لوحة التحكم
+    try {
+      await supabase.from("orders").insert([
+        {
+          customer_name: formData.fullName.trim(),
+          phone: formData.phone.trim(),
+          city: detectedCity || "مصر",
+          address: formData.address.trim(),
+          items: [
+            {
+              id: selectedProduct.id,
+              name: selectedProduct.name,
+              price: selectedProduct.price,
+              quantity: 1,
+              image: selectedProduct.image || "",
+            },
+          ],
+          total_price: Number(selectedProduct.price),
+          status: "جديد",
+        },
+      ]);
+    } catch (err) {
+      console.error("فشل حفظ الطلب في Supabase:", err);
+    }
+
+    // 2. تجهيز رابط الواتساب والتحويل المباشر
     const whatsAppUrl = generateWhatsAppLink({
       productName: selectedProduct.name,
       price: selectedProduct.price,
@@ -36,25 +67,11 @@ export default function QuickOrderModal() {
       customerAddress: formData.address,
     });
 
-    try {
-      fetch("/api/order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...formData,
-          product: selectedProduct,
-          quantity: 1,
-        }),
-      }).catch((err) => console.error("Background sync error:", err));
-    } catch (err) {
-      // استمرار التحويل في حال تعذر الاتصال بالسيرفر
-    }
-
     setTimeout(() => {
       window.location.href = whatsAppUrl;
       setLoading(false);
       closeModal();
-    }, 350);
+    }, 200);
   };
 
   const isCavillo = selectedProduct.brand === "cavillo";
@@ -74,7 +91,7 @@ export default function QuickOrderModal() {
 
         <div className="p-6 md:p-8 space-y-5">
           
-          {/* بطاقة تعريف المنتج بلمسات البوتيك الفاخر */}
+          {/* بطاقة تعريف المنتج */}
           <div className="flex items-center gap-4 pb-4 border-b border-[#EADFD5]">
             <div className="w-16 h-16 bg-white rounded-2xl p-1.5 border border-[#EADFD5] shadow-xs flex items-center justify-center shrink-0 overflow-hidden">
               {selectedProduct.image ? (
@@ -132,7 +149,7 @@ export default function QuickOrderModal() {
             </div>
           )}
 
-          {/* نموذج إدخال البيانات المريح وعالي التباين */}
+          {/* نموذج إدخال البيانات */}
           <form onSubmit={handleSubmitAndRedirect} className="space-y-3.5">
             <div>
               <label className="block text-xs font-bold text-[#2E332F] mb-1">الاسم الكامل *</label>
@@ -174,7 +191,6 @@ export default function QuickOrderModal() {
             </div>
 
             <div className="pt-2">
-              {/* زر التحويل إلى واتساب بتدرج زمردي مشرق */}
               <button
                 type="submit"
                 disabled={loading}
