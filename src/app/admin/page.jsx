@@ -17,35 +17,34 @@ import {
   LogOut, 
   CheckCircle2, 
   AlertCircle,
-  ShieldCheck,
-  UserCheck
+  ShieldCheck
 } from "lucide-react";
 
 export default function AdminDashboard() {
   const [sessionUser, setSessionUser] = useState(null);
-  const [userRole, setUserRole] = useState(null); // super_admin | products_manager | orders_manager
+  const [userRole, setUserRole] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   
-  // بيانات تسجيل الدخول
+  // تسجيل الدخول
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
 
-  // نافذة تغيير كلمة المرور
+  // تغيير كلمة المرور
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [passwordMsg, setPasswordMsg] = useState({ type: "", text: "" });
   const [updatingPassword, setUpdatingPassword] = useState(false);
 
   // التبويب النشط
-  const [activeTab, setActiveTab] = useState("products"); // products | categories | orders | team
+  const [activeTab, setActiveTab] = useState("products");
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [orders, setOrders] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // حالة نموذج المنتج
+  // نموذج المنتج
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [productForm, setProductForm] = useState({
@@ -63,7 +62,7 @@ export default function AdminDashboard() {
   });
   const [uploadingImage, setUploadingImage] = useState(false);
 
-  // حالة نموذج القسم
+  // نموذج القسم
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [categoryForm, setCategoryForm] = useState({
     id: "",
@@ -87,7 +86,6 @@ export default function AdminDashboard() {
       if (profile) {
         setUserRole(profile.role);
       } else if (user.email === "anasmustafabadr@gmail.com") {
-        // تسجيل المدير العام تلقائياً إذا لم يكن مضافاً
         await supabase.from("admin_profiles").upsert({
           id: user.id,
           email: user.email,
@@ -171,7 +169,7 @@ export default function AdminDashboard() {
     setUpdatingPassword(false);
   };
 
-  // جلب البيانات من Supabase
+  // جلب البيانات
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -672,7 +670,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ==================== 4. صلاحيات فريق العمل (للمدير العام فقط) ==================== */}
+        {/* ==================== 4. صلاحيات فريق العمل ==================== */}
         {activeTab === "team" && isSuperAdmin && (
           <div className="space-y-6">
             <div>
@@ -691,4 +689,295 @@ export default function AdminDashboard() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {teamMembers.map((member) => (
-                    <tr key={member.id} className="hover:bg-gray-50
+                    <tr key={member.id} className="hover:bg-gray-50">
+                      <td className="p-3.5 font-bold font-mono">
+                        {member.email}
+                        {member.email === "anasmustafabadr@gmail.com" && (
+                          <span className="mr-2 px-2 py-0.5 bg-emerald-100 text-[#2D6A4F] rounded text-[10px]">المالك الرئيسي</span>
+                        )}
+                      </td>
+                      <td className="p-3.5">
+                        <span className="px-2.5 py-1 bg-gray-100 rounded-lg font-bold">
+                          {member.role === "super_admin" ? "مدير عام (كامل الصلاحيات)" :
+                           member.role === "products_manager" ? "مسؤول منتجات وأقسام فقط" :
+                           "مسؤول طلبات وشحن فقط"}
+                        </span>
+                      </td>
+                      <td className="p-3.5">
+                        {member.email === "anasmustafabadr@gmail.com" ? (
+                          <span className="text-gray-400 text-[11px]">صلاحية ثابتة للمدير العام</span>
+                        ) : (
+                          <select
+                            value={member.role}
+                            onChange={(e) => handleUpdateRole(member.id, e.target.value)}
+                            className="px-2.5 py-1 bg-white border border-gray-300 rounded-lg text-xs font-bold"
+                          >
+                            <option value="super_admin">مدير عام (كامل الصلاحيات)</option>
+                            <option value="products_manager">مسؤول منتجات وأقسام فقط</option>
+                            <option value="orders_manager">مسؤول طلبات وشحن فقط</option>
+                          </select>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+      </main>
+
+      {/* نافذة تغيير كلمة المرور */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4" dir="rtl">
+            <div className="flex items-center gap-2 text-[#2D6A4F]">
+              <KeyRound size={22} />
+              <h3 className="text-base font-black text-[#2E332F]">تغيير كلمة المرور</h3>
+            </div>
+            <p className="text-xs text-gray-500">أدخل كلمة المرور الجديدة لحسابك (6 خانات على الأقل):</p>
+            
+            <form onSubmit={handleChangePassword} className="space-y-3">
+              <input
+                type="password"
+                required
+                placeholder="كلمة المرور الجديدة"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs focus:ring-2 focus:ring-[#2D6A4F] focus:outline-none"
+              />
+
+              {passwordMsg.text && (
+                <p className={`text-xs font-bold ${passwordMsg.type === "error" ? "text-red-600" : "text-emerald-700"}`}>
+                  {passwordMsg.text}
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordModal(false)}
+                  className="px-4 py-2 bg-gray-100 rounded-xl text-xs font-bold"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={updatingPassword}
+                  className="px-4 py-2 bg-[#2D6A4F] text-white rounded-xl text-xs font-bold hover:bg-[#23533E]"
+                >
+                  {updatingPassword ? "جاري التحديث..." : "حفظ كلمة المرور"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة إضافة / تعديل منتج */}
+      {showProductModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto space-y-4" dir="rtl">
+            <h3 className="text-base font-black text-[#2E332F]">
+              {editingProduct ? "تعديل المنتج" : "إضافة منتج جديد"}
+            </h3>
+
+            <form onSubmit={handleSaveProduct} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-gray-600 block mb-1">اسم المنتج</label>
+                <input
+                  type="text"
+                  required
+                  value={productForm.name}
+                  onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-gray-600 block mb-1">العنوان التوضيحي</label>
+                <input
+                  type="text"
+                  value={productForm.subtitle}
+                  onChange={(e) => setProductForm({ ...productForm, subtitle: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-xl"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-gray-600 block mb-1">السعر النهائي (ج.م)</label>
+                  <input
+                    type="number"
+                    required
+                    value={productForm.price}
+                    onChange={(e) => setProductForm({ ...productForm, price: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-gray-600 block mb-1">السعر قبل الخصم (ج.م)</label>
+                  <input
+                    type="number"
+                    value={productForm.original_price}
+                    onChange={(e) => setProductForm({ ...productForm, original_price: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-gray-600 block mb-1">القسم</label>
+                  <select
+                    value={productForm.category_id}
+                    onChange={(e) => setProductForm({ ...productForm, category_id: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl"
+                  >
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="font-bold text-gray-600 block mb-1">الترتيب داخل القسم</label>
+                  <input
+                    type="number"
+                    value={productForm.sort_order}
+                    onChange={(e) => setProductForm({ ...productForm, sort_order: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl"
+                  />
+                </div>
+              </div>
+
+              {/* رفع الصورة */}
+              <div>
+                <label className="font-bold text-gray-600 block mb-1">صورة المنتج</label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    placeholder="رابط الصورة أو ارفع ملف من جهازك"
+                    value={productForm.image}
+                    onChange={(e) => setProductForm({ ...productForm, image: e.target.value })}
+                    className="flex-1 px-3 py-2 border rounded-xl text-left font-mono text-[11px]"
+                  />
+                  <label className="px-3 py-2 bg-gray-100 hover:bg-gray-200 cursor-pointer rounded-xl font-bold flex items-center gap-1">
+                    <Upload size={14} />
+                    <span>{uploadingImage ? "جاري الرفع..." : "رفع"}</span>
+                    <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-gray-600 block mb-1">شارة العرض (Badge)</label>
+                <input
+                  type="text"
+                  placeholder="مثال: الأكثر مبيعاً / وفر 100 ج.م"
+                  value={productForm.badge}
+                  onChange={(e) => setProductForm({ ...productForm, badge: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-gray-600 block mb-1">وصف المنتج</label>
+                <textarea
+                  rows="3"
+                  value={productForm.description}
+                  onChange={(e) => setProductForm({ ...productForm, description: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-xl"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowProductModal(false)}
+                  className="px-4 py-2 bg-gray-100 rounded-xl font-bold"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-[#2D6A4F] text-white rounded-xl font-bold hover:bg-[#23533E]"
+                >
+                  حفظ التعديلات
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة إضافة قسم */}
+      {showCategoryModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4" dir="rtl">
+            <h3 className="text-base font-black">إضافة قسم جديد</h3>
+            <form onSubmit={handleSaveCategory} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-gray-600 block mb-1">معرف القسم بالإنجليزي (ID)</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="مثال: perfumes"
+                  value={categoryForm.id}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, id: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-xl font-mono"
+                />
+              </div>
+              <div>
+                <label className="font-bold text-gray-600 block mb-1">اسم القسم بالعربي</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="مثال: العطور الفاخرة"
+                  value={categoryForm.name}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-xl"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-gray-600 block mb-1">الأيقونة (Emoji)</label>
+                  <input
+                    type="text"
+                    value={categoryForm.icon}
+                    onChange={(e) => setCategoryForm({ ...categoryForm, icon: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl text-center"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-gray-600 block mb-1">رقم الترتيب</label>
+                  <input
+                    type="number"
+                    value={categoryForm.sort_order}
+                    onChange={(e) => setCategoryForm({ ...categoryForm, sort_order: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl text-center"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCategoryModal(false)}
+                  className="px-4 py-2 bg-gray-100 rounded-xl font-bold"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-[#2D6A4F] text-white rounded-xl font-bold hover:bg-[#23533E]"
+                >
+                  حفظ القسم
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
