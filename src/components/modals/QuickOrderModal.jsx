@@ -29,13 +29,12 @@ export default function QuickOrderModal() {
     setLoading(true);
     setErrorMsg("");
 
-    // استخراج المحافظة من العنوان إن وجدت (قبل أول شرطة أو فاصلة)
     const addressParts = formData.address.split(/[-–,،]/);
     const detectedCity = addressParts.length > 1 ? addressParts[0].trim() : "مصر";
 
-    // 1. تسجيل الطلب مباشرة في Supabase ليظهر في لوحة التحكم
+    // 1. تسجيل الطلب والانتظار حتى يؤكد Supabase استلام البيانات
     try {
-      await supabase.from("orders").insert([
+      const { error } = await supabase.from("orders").insert([
         {
           customer_name: formData.fullName.trim(),
           phone: formData.phone.trim(),
@@ -54,11 +53,15 @@ export default function QuickOrderModal() {
           status: "جديد",
         },
       ]);
+
+      if (error) {
+        console.error("Supabase error:", error);
+      }
     } catch (err) {
-      console.error("فشل حفظ الطلب في Supabase:", err);
+      console.error("Connection error:", err);
     }
 
-    // 2. تجهيز رابط الواتساب والتحويل المباشر
+    // 2. تجهيز الرابط والتحويل بعد ضمان انتهاء التسجيل
     const whatsAppUrl = generateWhatsAppLink({
       productName: selectedProduct.name,
       price: selectedProduct.price,
@@ -67,11 +70,9 @@ export default function QuickOrderModal() {
       customerAddress: formData.address,
     });
 
-    setTimeout(() => {
-      window.location.href = whatsAppUrl;
-      setLoading(false);
-      closeModal();
-    }, 200);
+    setLoading(false);
+    closeModal();
+    window.location.href = whatsAppUrl;
   };
 
   const isCavillo = selectedProduct.brand === "cavillo";
