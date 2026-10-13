@@ -1,27 +1,24 @@
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import HeroSection from "@/components/home/HeroSection";
-import CategoryGrid from "@/components/home/CategoryGrid";
 import BrandSection from "@/components/home/BrandSection";
 import QuizBanner from "@/components/home/QuizBanner";
 import TrustBar from "@/components/home/TrustBar";
 import QuickOrderModal from "@/components/modals/QuickOrderModal";
+import CartDrawer from "@/components/modals/CartDrawer";
 import QuizModal from "@/components/modals/QuizModal";
 import FloatingWhatsApp from "@/components/layout/FloatingWhatsApp";
 import { supabase } from "@/lib/supabase";
 
-// تعطيل الكاش لضمان ظهور التعديلات والإخفاء فوراً للزوار
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function Home() {
-  // جلب الأقسام مرتبة
   const { data: categories } = await supabase
     .from("categories")
     .select("*")
     .order("sort_order", { ascending: true });
 
-  // جلب المنتجات المفعّلة فقط
   const { data: products } = await supabase
     .from("products")
     .select("*, categories(*)")
@@ -36,9 +33,9 @@ export default async function Home() {
     <main className="min-h-screen flex flex-col bg-white relative">
       <Navbar />
       <HeroSection />
-      <CategoryGrid />
 
-      {/* قسم المنتجات مربوط ديناميكياً مع الأقسام وفلاتر التصفية */}
+      {/* تم الاستغناء عن CategoryGrid القديم لمنع التكرار */}
+      
       <div id="products">
         <BrandSection
           brand="raihanna"
@@ -53,8 +50,12 @@ export default async function Home() {
       <QuizBanner />
       <TrustBar />
       <Footer />
+
+      {/* نوافذ الشراء والسلة والاختبار */}
       <QuickOrderModal />
+      <CartDrawer />
       <QuizModal />
+
       <FloatingWhatsApp />
     </main>
   );
