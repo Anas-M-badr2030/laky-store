@@ -17,7 +17,9 @@ import {
   LogOut, 
   ShieldCheck,
   FileSpreadsheet,
-  Download
+  Download,
+  Eye,
+  EyeOff
 } from "lucide-react";
 
 export default function AdminDashboard() {
@@ -63,6 +65,7 @@ export default function AdminDashboard() {
     category_id: "",
     sort_order: 1,
     is_bundle: false,
+    is_active: true,
   });
   const [uploadingImage, setUploadingImage] = useState(false);
 
@@ -201,6 +204,26 @@ export default function AdminDashboard() {
     }
   }, [sessionUser, userRole]);
 
+  // تبديل حالة الظهور للمنتج بزر العين
+  const handleToggleVisibility = async (id, currentStatus) => {
+    const nextStatus = !currentStatus;
+
+    // تحديث فوري وسريع في الواجهة (Optimistic update)
+    setProducts((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, is_active: nextStatus } : p))
+    );
+
+    const { error } = await supabase
+      .from("products")
+      .update({ is_active: nextStatus })
+      .eq("id", id);
+
+    if (error) {
+      alert("تعذر تحديث حالة الظهور: " + error.message);
+      fetchData();
+    }
+  };
+
   const handleImageUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -238,6 +261,7 @@ export default function AdminDashboard() {
       category_id: productForm.category_id || (categories[0]?.id || null),
       sort_order: Number(productForm.sort_order) || 1,
       is_bundle: Boolean(productForm.is_bundle),
+      is_active: productForm.is_active !== false,
     };
 
     const { error } = await supabase.from("products").upsert(payload);
@@ -284,14 +308,12 @@ export default function AdminDashboard() {
     }
   };
 
-  // 1. تحميل نموذج CSV تجريبي
   const handleDownloadTemplate = () => {
     const defaultCat = categories[0]?.id || "hair-care";
     const csvHeader = "id,name,subtitle,description,price,original_price,image,badge,category_id,sort_order\n";
     const sampleRow1 = `,"سيروم ريحانة للتغذية","سيروم طبيعي للشعر","تركيبة متطورة من الزيوت الطبيعية",325,450,"","الأكثر مبيعاً",${defaultCat},1\n`;
     const sampleRow2 = `,"زيت المساج الفاخر","ترطيب عميق ونعومة","مستخلصات طبيعية منعشة",275,350,"","وفر 75 ج.م",${defaultCat},2\n`;
     
-    // إضافة \uFEFF لحل مشكلة قراءة الحروف العربية في Excel
     const blob = new Blob(["\uFEFF" + csvHeader + sampleRow1 + sampleRow2], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -302,7 +324,6 @@ export default function AdminDashboard() {
     document.body.removeChild(link);
   };
 
-  // 2. معالجة واستيراد ملف CSV
   const handleCSVUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -315,7 +336,6 @@ export default function AdminDashboard() {
         const text = event.target?.result;
         if (typeof text !== "string") throw new Error("تعذر قراءة الملف");
 
-        // تقسيم الأسطر
         const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
         if (lines.length < 2) {
           alert("الملف فارغ أو لا يحتوي على أسطر منتجات.");
@@ -323,7 +343,6 @@ export default function AdminDashboard() {
           return;
         }
 
-        // دالة تفكيك السطر ومراعاة الفواصل والاقتباسات
         const parseLine = (line) => {
           const result = [];
           let current = "";
@@ -371,29 +390,30 @@ export default function AdminDashboard() {
             description: row.description || row["الوصف"] || "",
             price: Number(rawPrice) || 0,
             original_price: row.original_price ? Number(row.original_price) : null,
-            image: row.image || row["الصورة"] || row["رابط الصورة"] || "", // تقبل فارغة بدون أي مشكلة
+            image: row.image || row["الصورة"] || row["رابط الصورة"] || "",
             badge: row.badge || row["الشارة"] || "",
             category_id: row.category_id || row["معرف القسم"] || (categories[0]?.id || null),
             sort_order: Number(row.sort_order || row["الترتيب"]) || i,
             is_bundle: false,
+            is_active: true,
           });
         }
 
         if (importedPayload.length === 0) {
-          alert("لم يتم العثور على منتجات صالحة في الملف. تأكد من وجود عمودي الاسم والسعر.");
+          alert("لم يتم العثور على منتجات صالحة في الملف.");
           setImportingCSV(false);
           return;
         }
 
         const { error } = await supabase.from("products").upsert(importedPayload);
         if (error) {
-          alert("حدث خطأ أثناء حفظ المنتجات في قاعدة البيانات: " + error.message);
+          alert("حدث خطأ أثناء حفظ المنتجات: " + error.message);
         } else {
           alert(`تم استيراد ${importedPayload.length} منتج بنجاح!`);
           fetchData();
         }
-      } catch (err) {
-        alert("فشل فحص الملف. يرجى التأكد من حفظه بصيغة CSV صالحة.");
+      } catch {
+        alert("فشل فحص الملف. تأكد من صحة الصياغة.");
       } finally {
         setImportingCSV(false);
         if (csvFileInputRef.current) csvFileInputRef.current.value = "";
@@ -557,22 +577,20 @@ export default function AdminDashboard() {
             <div className="flex flex-wrap justify-between items-center gap-3">
               <div>
                 <h2 className="text-lg font-black">إدارة منتجات ريحانة</h2>
-                <p className="text-xs text-gray-500">تعديل الأسعار، الأوصاف، والترتيب أو الاستيراد الجماعي</p>
+                <p className="text-xs text-gray-500">اضغط على زر العين لإخفاء أي منتج عن زوار المتجر فوراً</p>
               </div>
 
               {/* أزرار الإجراءات */}
               <div className="flex items-center gap-2">
-                {/* زر تحميل القالب */}
                 <button
                   onClick={handleDownloadTemplate}
                   className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
-                  title="تحميل ملف CSV تجريبي للتعرف على الأعمدة"
+                  title="تحميل ملف CSV تجريبي"
                 >
                   <Download size={15} />
                   <span>تحميل نموذج CSV</span>
                 </button>
 
-                {/* زر استيراد CSV */}
                 <input
                   type="file"
                   ref={csvFileInputRef}
@@ -589,7 +607,6 @@ export default function AdminDashboard() {
                   <span>{importingCSV ? "جاري الاستيراد..." : "استيراد ملف CSV"}</span>
                 </button>
 
-                {/* إضافة منتج يدوي */}
                 <button
                   onClick={() => {
                     setEditingProduct(null);
@@ -605,6 +622,7 @@ export default function AdminDashboard() {
                       category_id: categories[0]?.id || "",
                       sort_order: products.length + 1,
                       is_bundle: false,
+                      is_active: true,
                     });
                     setShowProductModal(true);
                   }}
@@ -631,58 +649,88 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {products.map((p) => (
-                    <tr key={p.id} className="hover:bg-gray-50">
-                      <td className="p-3.5 font-bold text-gray-500">#{p.sort_order}</td>
-                      <td className="p-3.5">
-                        <img src={p.image || "/favicon.ico"} alt={p.name} className="w-10 h-10 object-cover rounded-lg border border-gray-100" />
-                      </td>
-                      <td className="p-3.5">
-                        <p className="font-black text-[#2E332F]">{p.name}</p>
-                        <p className="text-[11px] text-gray-400">{p.subtitle}</p>
-                      </td>
-                      <td className="p-3.5 font-semibold text-[#2D6A4F]">
-                        {p.categories?.name || p.category_id}
-                      </td>
-                      <td className="p-3.5 font-black text-emerald-700">{p.price} ج.م</td>
-                      <td className="p-3.5 text-gray-400 line-through">{p.original_price ? `${p.original_price} ج.م` : "-"}</td>
-                      <td className="p-3.5">
-                        {p.badge && <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md text-[10px] font-bold">{p.badge}</span>}
-                      </td>
-                      <td className="p-3.5 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            onClick={() => {
-                              setEditingProduct(p);
-                              setProductForm({
-                                id: p.id,
-                                name: p.name,
-                                subtitle: p.subtitle || "",
-                                description: p.description || "",
-                                price: p.price,
-                                original_price: p.original_price || "",
-                                image: p.image || "",
-                                badge: p.badge || "",
-                                category_id: p.category_id || "",
-                                sort_order: p.sort_order || 1,
-                                is_bundle: p.is_bundle || false,
-                              });
-                              setShowProductModal(true);
-                            }}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
-                          >
-                            <Edit3 size={16} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteProduct(p.id)}
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {products.map((p) => {
+                    const isVisible = p.is_active !== false;
+                    return (
+                      <tr 
+                        key={p.id} 
+                        className={`hover:bg-gray-50 transition-colors ${!isVisible ? "bg-gray-50/70 opacity-60" : ""}`}
+                      >
+                        <td className="p-3.5 font-bold text-gray-500">#{p.sort_order}</td>
+                        <td className="p-3.5">
+                          <img src={p.image || "/favicon.ico"} alt={p.name} className="w-10 h-10 object-cover rounded-lg border border-gray-100" />
+                        </td>
+                        <td className="p-3.5">
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-black text-[#2E332F]">{p.name}</p>
+                            {!isVisible && (
+                              <span className="px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded text-[9px] font-bold">
+                                مخفي عن الزوار
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-gray-400">{p.subtitle}</p>
+                        </td>
+                        <td className="p-3.5 font-semibold text-[#2D6A4F]">
+                          {p.categories?.name || p.category_id}
+                        </td>
+                        <td className="p-3.5 font-black text-emerald-700">{p.price} ج.م</td>
+                        <td className="p-3.5 text-gray-400 line-through">{p.original_price ? `${p.original_price} ج.م` : "-"}</td>
+                        <td className="p-3.5">
+                          {p.badge && <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md text-[10px] font-bold">{p.badge}</span>}
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {/* زر العين للتحكم في الإظهار والإخفاء */}
+                            <button
+                              onClick={() => handleToggleVisibility(p.id, isVisible)}
+                              className={`p-1.5 rounded-lg transition-colors ${
+                                isVisible 
+                                  ? "text-emerald-700 hover:bg-emerald-50" 
+                                  : "text-gray-400 hover:bg-gray-200"
+                              }`}
+                              title={isVisible ? "المنتج ظاهر (اضغط لإخفائه)" : "المنتج مخفي (اضغط لإظهاره)"}
+                            >
+                              {isVisible ? <Eye size={16} /> : <EyeOff size={16} />}
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setEditingProduct(p);
+                                setProductForm({
+                                  id: p.id,
+                                  name: p.name,
+                                  subtitle: p.subtitle || "",
+                                  description: p.description || "",
+                                  price: p.price,
+                                  original_price: p.original_price || "",
+                                  image: p.image || "",
+                                  badge: p.badge || "",
+                                  category_id: p.category_id || "",
+                                  sort_order: p.sort_order || 1,
+                                  is_bundle: p.is_bundle || false,
+                                  is_active: p.is_active !== false,
+                                });
+                                setShowProductModal(true);
+                              }}
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
+                              title="تعديل المنتج"
+                            >
+                              <Edit3 size={16} />
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteProduct(p.id)}
+                              className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
+                              title="حذف المنتج"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1022,6 +1070,19 @@ export default function AdminDashboard() {
                   onChange={(e) => setProductForm({ ...productForm, description: e.target.value })}
                   className="w-full px-3 py-2 border rounded-xl"
                 />
+              </div>
+
+              {/* خيار تفعيل ظهور المنتج */}
+              <div className="pt-1">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={productForm.is_active}
+                    onChange={(e) => setProductForm({ ...productForm, is_active: e.target.checked })}
+                    className="w-4 h-4 text-[#2D6A4F] rounded border-gray-300 focus:ring-[#2D6A4F]"
+                  />
+                  <span className="font-bold text-gray-700">إظهار المنتج لزوار المتجر</span>
+                </label>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
