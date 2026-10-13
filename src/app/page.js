@@ -8,47 +8,53 @@ import TrustBar from "@/components/home/TrustBar";
 import QuickOrderModal from "@/components/modals/QuickOrderModal";
 import QuizModal from "@/components/modals/QuizModal";
 import FloatingWhatsApp from "@/components/layout/FloatingWhatsApp";
-import { products } from "@/data/products";
+import { supabase } from "@/lib/supabase";
 
-export default function Home() {
-  const raihannaProducts = products.filter((p) => p.brand === "raihanna");
+// تعطيل الكاش لضمان ظهور التعديلات والإخفاء فوراً للزوار
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+export default async function Home() {
+  // جلب الأقسام مرتبة
+  const { data: categories } = await supabase
+    .from("categories")
+    .select("*")
+    .order("sort_order", { ascending: true });
+
+  // جلب المنتجات المفعّلة فقط
+  const { data: products } = await supabase
+    .from("products")
+    .select("*, categories(*)")
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true });
+
+  const raihannaProducts = (products || []).filter(
+    (p) => !p.brand || p.brand === "raihanna"
+  );
 
   return (
     <main className="min-h-screen flex flex-col bg-white relative">
-      {/* الهيدر العلوي */}
       <Navbar />
-
-      {/* قسم الهيرو وجذب الانتباه */}
       <HeroSection />
-
-      {/* شبكة الأقسام الأربعة */}
       <CategoryGrid />
 
-      {/* قسم منتجات ريحانة الحصري */}
+      {/* قسم المنتجات مربوط ديناميكياً مع الأقسام وفلاتر التصفية */}
       <div id="products">
         <BrandSection
           brand="raihanna"
           logoText="Raihanna"
-          title="منتجات ريحانة المختارة"
-          subtitle="تركيبات طبيعية فاخرة .. لشعر أكثر حيوية وبشرة تشع إشراقاً وجمالاً"
+          title="منتجات ريحانة الطبيعية"
+          subtitle="تركيبات عشبية نقية وعناية متكاملة لشعرك وبشرتك"
           products={raihannaProducts}
+          categories={categories || []}
         />
       </div>
 
-      {/* بنر الاختبار السريع: مش عارفة تختاري؟ */}
       <QuizBanner />
-
-      {/* شريط الأمان والثقة الأربعة */}
       <TrustBar />
-
-      {/* التذييل */}
       <Footer />
-
-      {/* النوافذ المنبثقة للطلب والاختبار السريع */}
       <QuickOrderModal />
       <QuizModal />
-
-      {/* زر الواتساب العائم المباشر */}
       <FloatingWhatsApp />
     </main>
   );
